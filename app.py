@@ -10,6 +10,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import time
+import utils
 
 # ページ設定
 st.set_page_config(
@@ -41,30 +42,6 @@ st.markdown("""
     }
     </style>
 """, unsafe_allow_html=True)
-
-# デモ用主要銘柄リスト（20銘柄）
-STOCK_LIST = [
-    ("7203.T", "トヨタ自動車"),
-    ("6758.T", "ソニーグループ"),
-    ("8306.T", "三菱UFJフィナンシャル・グループ"),
-    ("9984.T", "ソフトバンクグループ"),
-    ("9983.T", "ファーストリテイリング"),
-    ("6861.T", "キーエンス"),
-    ("6098.T", "リクルートホールディングス"),
-    ("8035.T", "東京エレクトロン"),
-    ("9432.T", "日本電信電話"),
-    ("4063.T", "信越化学工業"),
-    ("6501.T", "日立製作所"),
-    ("7974.T", "任天堂"),
-    ("8001.T", "伊藤忠商事"),
-    ("4502.T", "武田薬品工業"),
-    ("6902.T", "デンソー"),
-    ("9613.T", "エヌ・ティ・ティ・データ"),
-    ("8316.T", "三井住友フィナンシャルグループ"),
-    ("2914.T", "JT（日本たばこ産業）"),
-    ("4543.T", "テルモ"),
-    ("4568.T", "第一三共"),
-]
 
 
 def fetch_stock_data(ticker: str, period: str = "6mo") -> pd.DataFrame:
@@ -328,6 +305,17 @@ def main():
     with st.sidebar:
         st.header("⚙️ 設定")
         
+        st.subheader("対象インデックス")
+        selected_index = st.selectbox(
+            "インデックスを選択",
+            options=["日経225", "TOPIX Core30", "TOPIX 100", "全銘柄"],
+            index=0,
+            help="スクリーニング対象のインデックスを選択してください"
+        )
+        
+        # 選択されたインデックスに応じて銘柄リストを取得
+        STOCK_LIST = utils.get_stocks_by_index(selected_index)
+        
         st.subheader("スクリーニング条件")
         st.info("""
         **条件A（順張り）:**  
@@ -358,6 +346,7 @@ def main():
         run_screening = st.button("🔍 スクリーニング実行", type="primary")
         
         st.markdown("---")
+        st.caption(f"選択インデックス: {selected_index}")
         st.caption(f"対象銘柄数: {len(STOCK_LIST)}銘柄")
         st.caption("データソース: Yahoo Finance")
     
