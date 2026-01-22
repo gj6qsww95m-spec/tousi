@@ -42,21 +42,48 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# カスタムCSS（スマホ対応のレスポンシブデザイン）+ PWA対応
-st.markdown(f"""
-    <!-- PWA / iOS ホーム画面対応 -->
+# テーマ設定を session_state で初期化
+if 'theme' not in st.session_state:
+    st.session_state.theme = "ダーク"
+
+def get_theme_css(theme: str) -> str:
+    """
+    テーマに応じた動的CSSを生成
+    """
+    if theme == "ダーク":
+        bg_color = "#0E1117"
+        secondary_bg = "#262730"
+        text_color = "#FAFAFA"
+        theme_color = "#0E1117"
+    else:
+        bg_color = "#FFFFFF"
+        secondary_bg = "#F0F2F6"
+        text_color = "#262730"
+        theme_color = "#FFFFFF"
+    
+    return f"""
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="株スクリーナー">
     <meta name="mobile-web-app-capable" content="yes">
-    <meta name="theme-color" content="#4CAF50">
+    <meta name="theme-color" content="{theme_color}">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
     
-    <!-- Apple Touch Icon (ホーム画面アイコン用) -->
-    {f'<link rel="apple-touch-icon" href="data:image/png;base64,{icon_base64}">' if icon_base64 else f"<link rel='apple-touch-icon' href='data:image/svg+xml,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><rect fill=\"%234CAF50\" width=\"100\" height=\"100\" rx=\"20\"/><text x=\"50\" y=\"65\" font-size=\"50\" text-anchor=\"middle\" fill=\"white\">📈</text></svg>'>"}
+    {f'<link rel="apple-touch-icon" href="data:image/png;base64,{icon_base64}">' if icon_base64 else ''}
     
     <style>
-    /* PWA スタンドアローンモード用スタイル */
+    /* ダイナミックテーマ */
+    .stApp {{
+        background-color: {bg_color} !important;
+    }}
+    [data-testid="stSidebar"] {{
+        background-color: {secondary_bg} !important;
+    }}
+    .stMarkdown, .stText, p, span, label, h1, h2, h3, h4, h5, h6 {{
+        color: {text_color} !important;
+    }}
+    
+    /* PWA スタンドアローンモード用 */
     @media (display-mode: standalone) {{
         .stApp {{
             padding-top: env(safe-area-inset-top);
@@ -64,14 +91,13 @@ st.markdown(f"""
         }}
     }}
     
-    .main {{
-        padding: 1rem;
-    }}
     .stButton>button {{
         width: 100%;
         background-color: #4CAF50;
         color: white;
         font-weight: bold;
+        border: none;
+        border-radius: 5px;
     }}
     .stDataFrame {{
         font-size: 0.9rem;
@@ -82,7 +108,11 @@ st.markdown(f"""
         }}
     }}
     </style>
-""", unsafe_allow_html=True)
+    """
+
+# 動的CSSを適用
+st.markdown(get_theme_css(st.session_state.theme), unsafe_allow_html=True)
+
 
 
 def fetch_stock_data(ticker: str, period: str = "6mo") -> tuple:
@@ -329,7 +359,7 @@ def calculate_support_resistance(df: pd.DataFrame, window: int = 20) -> dict:
     }
 
 
-def plot_candlestick_chart(ticker: str, name: str, period: str = "6mo", currency_symbol: str = "¥"):
+def plot_candlestick_chart(ticker: str, name: str, period: str = "6mo", currency_symbol: str = "¥", theme: str = "ダーク"):
     """
     ローソク足チャートを描画
     
@@ -338,6 +368,7 @@ def plot_candlestick_chart(ticker: str, name: str, period: str = "6mo", currency
         name: 銘柄名
         period: データ期間
         currency_symbol: 通貨記号（¥ または $）
+        theme: テーマ（ダーク または ライト）
     """
     df, _, _ = fetch_stock_data(ticker, period)
     if df is None or df.empty:
@@ -429,7 +460,7 @@ def plot_candlestick_chart(ticker: str, name: str, period: str = "6mo", currency
         showlegend=True,
         xaxis_rangeslider_visible=False,
         hovermode='x unified',
-        template='plotly_white'
+        template='plotly_dark' if theme == "ダーク" else 'plotly_white'
     )
     
     fig.update_xaxes(title_text="日付", row=2, col=1)
@@ -477,6 +508,19 @@ def main():
             index=0,
             horizontal=True
         )
+        
+        # テーマ選択
+        st.subheader("🎨 テーマ")
+        theme_selection = st.radio(
+            "表示モード",
+            options=["ダーク", "ライト"],
+            index=0 if st.session_state.theme == "ダーク" else 1,
+            horizontal=True,
+            key="theme_radio"
+        )
+        if theme_selection != st.session_state.theme:
+            st.session_state.theme = theme_selection
+            st.rerun()
         
         # 市場に応じた通貨記号
         currency_symbol = "¥" if market == "日本株" else "$"
@@ -613,7 +657,7 @@ def main():
                 
                 if selected_stock:
                     stock_name = results_df[results_df['ティッカー']==selected_stock]['銘柄名'].iloc[0]
-                    plot_candlestick_chart(selected_stock, stock_name, period, currency_symbol)
+                    plot_candlestick_chart(selected_stock, stock_name, period, currency_symbol, st.session_state.theme)
                     
                     # 銘柄情報表示
                     stock_info = results_df[results_df['ティッカー']==selected_stock].iloc[0]
