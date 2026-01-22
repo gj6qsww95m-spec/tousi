@@ -531,6 +531,14 @@ def main():
         st.caption(f"対象銘柄数: {len(STOCK_LIST)}銘柄")
         st.caption("データソース: Yahoo Finance")
     
+    # session_stateの初期化
+    if 'results_df' not in st.session_state:
+        st.session_state.results_df = None
+    if 'last_market' not in st.session_state:
+        st.session_state.last_market = None
+    if 'last_index' not in st.session_state:
+        st.session_state.last_index = None
+    
     # メインコンテンツ
     if run_screening:
         st.subheader("🔍 スクリーニング結果")
@@ -541,75 +549,91 @@ def main():
         # スクリーニング実行
         results_df = screen_stocks(STOCK_LIST, progress_bar)
         
+        # 結果をsession_stateに保存
+        st.session_state.results_df = results_df
+        st.session_state.last_market = market
+        st.session_state.last_index = selected_index
+        
         # プログレスバークリア
         progress_bar.empty()
-        
-        if results_df.empty:
-            st.warning("条件に合致する銘柄が見つかりませんでした")
+    
+    # session_stateに結果がある場合に表示（市場/インデックスが変更されていない場合のみ）
+    if st.session_state.results_df is not None:
+        # 市場またはインデックスが変更された場合はリセット
+        if st.session_state.last_market != market or st.session_state.last_index != selected_index:
+            st.session_state.results_df = None
+            st.info("👈 市場またはインデックスが変更されました。再度「スクリーニング実行」をクリックしてください。")
         else:
-            st.success(f"✅ {len(results_df)}銘柄が条件に合致しました")
+            results_df = st.session_state.results_df
             
-            # 結果表示
-            st.dataframe(
-                results_df,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "現在値": st.column_config.NumberColumn(
-                        "現在値",
-                        format=f"{currency_symbol}%.2f"
-                    ),
-                    "PER": st.column_config.NumberColumn(
-                        "PER",
-                        format="%.2f",
-                        help="株価収益率（Price Earnings Ratio）"
-                    ),
-                    "PBR": st.column_config.NumberColumn(
-                        "PBR",
-                        format="%.2f",
-                        help="株価純資産倍率（Price Book-value Ratio）"
-                    ),
-                    "出来高": st.column_config.NumberColumn(
-                        "出来高",
-                        format="%d"
-                    )
-                }
-            )
-            
-            # 銘柄詳細表示
-            st.markdown("---")
-            st.subheader("📊 銘柄詳細チャート")
-            
-            # 銘柄選択
-            selected_stock = st.selectbox(
-                "表示する銘柄を選択",
-                options=results_df["ティッカー"].tolist(),
-                format_func=lambda x: f"{results_df[results_df['ティッカー']==x]['銘柄名'].iloc[0]} ({x})"
-            )
-            
-            if selected_stock:
-                stock_name = results_df[results_df['ティッカー']==selected_stock]['銘柄名'].iloc[0]
-                plot_candlestick_chart(selected_stock, stock_name, period, currency_symbol)
+            if results_df.empty:
+                st.warning("条件に合致する銘柄が見つかりませんでした")
+            else:
+                st.subheader("🔍 スクリーニング結果")
+                st.success(f"✅ {len(results_df)}銘柄が条件に合致しました")
                 
-                # 銘柄情報表示
-                stock_info = results_df[results_df['ティッカー']==selected_stock].iloc[0]
+                # 結果表示
+                st.dataframe(
+                    results_df,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "現在値": st.column_config.NumberColumn(
+                            "現在値",
+                            format=f"{currency_symbol}%.2f"
+                        ),
+                        "PER": st.column_config.NumberColumn(
+                            "PER",
+                            format="%.2f",
+                            help="株価収益率（Price Earnings Ratio）"
+                        ),
+                        "PBR": st.column_config.NumberColumn(
+                            "PBR",
+                            format="%.2f",
+                            help="株価純資産倍率（Price Book-value Ratio）"
+                        ),
+                        "出来高": st.column_config.NumberColumn(
+                            "出来高",
+                            format="%d"
+                        )
+                    }
+                )
                 
-                col1, col2, col3, col4, col5, col6 = st.columns(6)
-                with col1:
-                    st.metric("現在値", f"{currency_symbol}{stock_info['現在値']}")
-                with col2:
-                    per_display = stock_info['PER'] if stock_info['PER'] != "-" else "N/A"
-                    st.metric("PER", per_display)
-                with col3:
-                    pbr_display = stock_info['PBR'] if stock_info['PBR'] != "-" else "N/A"
-                    st.metric("PBR", pbr_display)
-                with col4:
-                    st.metric("RSI", stock_info['RSI'])
-                with col5:
-                    st.metric("シグナル", stock_info['シグナル'])
-                with col6:
-                    st.metric("出来高", f"{stock_info['出来高']:,}")
-    else:
+                # 銘柄詳細表示
+                st.markdown("---")
+                st.subheader("📊 銘柄詳細チャート")
+                
+                # 銘柄選択（keyを追加してユニークにする）
+                selected_stock = st.selectbox(
+                    "表示する銘柄を選択",
+                    options=results_df["ティッカー"].tolist(),
+                    format_func=lambda x: f"{results_df[results_df['ティッカー']==x]['銘柄名'].iloc[0]} ({x})",
+                    key="stock_selector"
+                )
+                
+                if selected_stock:
+                    stock_name = results_df[results_df['ティッカー']==selected_stock]['銘柄名'].iloc[0]
+                    plot_candlestick_chart(selected_stock, stock_name, period, currency_symbol)
+                    
+                    # 銘柄情報表示
+                    stock_info = results_df[results_df['ティッカー']==selected_stock].iloc[0]
+                    
+                    col1, col2, col3, col4, col5, col6 = st.columns(6)
+                    with col1:
+                        st.metric("現在値", f"{currency_symbol}{stock_info['現在値']}")
+                    with col2:
+                        per_display = stock_info['PER'] if stock_info['PER'] != "-" else "N/A"
+                        st.metric("PER", per_display)
+                    with col3:
+                        pbr_display = stock_info['PBR'] if stock_info['PBR'] != "-" else "N/A"
+                        st.metric("PBR", pbr_display)
+                    with col4:
+                        st.metric("RSI", stock_info['RSI'])
+                    with col5:
+                        st.metric("シグナル", stock_info['シグナル'])
+                    with col6:
+                        st.metric("出来高", f"{stock_info['出来高']:,}")
+    elif not run_screening:
         # 初期表示
         st.info("👈 サイドバーの「スクリーニング実行」ボタンをクリックして開始してください")
         
