@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 import time
 import base64
 import os
+from PIL import Image
 import utils
 
 # アイコン画像（Base64）の取得
@@ -23,7 +24,15 @@ def get_base64_image(image_path):
 
 icon_path = os.path.join(os.path.dirname(__file__), "assets", "icon_180.png")
 icon_base64 = get_base64_image(icon_path)
-page_icon = icon_path if os.path.exists(icon_path) else "📈"
+
+# アイコンの読み込み
+page_icon = "📈"
+if os.path.exists(icon_path):
+    try:
+        page_icon = Image.open(icon_path)
+    except Exception as e:
+        print(f"Icon load error: {e}")
+        page_icon = "📈"
 
 # ページ設定
 st.set_page_config(
@@ -76,28 +85,42 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 
-def fetch_stock_data(ticker: str, period: str = "6mo") -> pd.DataFrame:
+def fetch_stock_data(ticker: str, period: str = "6mo") -> tuple:
     """
-    株価データを取得する
+    株価データとPER・PBRを取得する
     
     Args:
         ticker: ティッカーシンボル
         period: データ取得期間
     
     Returns:
-        株価データのDataFrame
+        株価データのDataFrame、PER、PBRのタプル
     """
     try:
         stock = yf.Ticker(ticker)
         df = stock.history(period=period)
         
         if df.empty:
-            return None
+            return None, None, None
         
-        return df
+        # PER（株価収益率）とPBR（株価純資産倍率）を取得
+        try:
+            info = stock.info
+            per = info.get('trailingPE', None)
+            if per is not None and (per < 0 or per > 1000):
+                per = None  # 異常値の場合はNone
+            
+            pbr = info.get('priceToBook', None)
+            if pbr is not None and (pbr < 0 or pbr > 100):
+                pbr = None  # 異常値の場合はNone
+        except:
+            per = None
+            pbr = None
+        
+        return df, per, pbr
     except Exception as e:
         st.warning(f"{ticker} のデータ取得に失敗しました: {str(e)}")
-        return None
+        return None, None, None
 
 
 def calculate_technical_indicators(df: pd.DataFrame) -> pd.DataFrame:
@@ -201,8 +224,8 @@ def screen_stocks(stock_list: list, progress_bar) -> pd.DataFrame:
         # プログレスバー更新
         progress_bar.progress((idx + 1) / total, text=f"分析中: {name} ({idx + 1}/{total})")
         
-        # データ取得
-        df = fetch_stock_data(ticker)
+        # データ取得（PER・PBRも含む）
+        df, per, pbr = fetch_stock_data(ticker)
         if df is None or df.empty:
             continue
         
@@ -230,6 +253,8 @@ def screen_stocks(stock_list: list, progress_bar) -> pd.DataFrame:
                 "ティッカー": ticker,
                 "銘柄名": name,
                 "現在値": round(latest['Close'], 2),
+                "PER": round(per, 2) if per is not None else "-",
+                "PBR": round(pbr, 2) if pbr is not None else "-",
                 "SMA5": round(latest['SMA5'], 2) if pd.notna(latest['SMA5']) else "-",
                 "SMA25": round(latest['SMA25'], 2) if pd.notna(latest['SMA25']) else "-",
                 "SMA75": round(latest['SMA75'], 2) if pd.notna(latest['SMA75']) else "-",
@@ -244,6 +269,66 @@ def screen_stocks(stock_list: list, progress_bar) -> pd.DataFrame:
     return pd.DataFrame(results)
 
 
+def calculate_support_resistance(df: pd.DataFrame, window: int = 20) -> dict:
+    """
+    サポートライン（支持線）とレジスタンスライン（抵抗線）を計算する
+    
+    Args:
+        df: 株価データ
+        window: ピボットポイント検出のウィンドウサイズ
+    
+    Returns:
+        サポート・レジスタンスレベルの辞書
+    """
+    if df is None or len(df) < window:
+        return {'support': [], 'resistance': []}
+    
+    supports = []
+    resistances = []
+    
+    # ローリングウィンドウでの最高値・最安値を計算
+    df_copy = df.copy()
+    df_copy['rolling_high'] = df_copy['High'].rolling(window=window, center=True).max()
+    df_copy['rolling_low'] = df_copy['Low'].rolling(window=window, center=True).min()
+    
+    # 直近30日間のデータでピボットポイントを検出
+    recent_data = df_copy.tail(60).dropna()
+    
+    for i in range(len(recent_data)):
+        row = recent_data.iloc[i]
+        # レジスタンス（高値がローリング最高値と一致）
+        if row['High'] == row['rolling_high']:
+            resistances.append(row['High'])
+        # サポート（安値がローリング最安値と一致）
+        if row['Low'] == row['rolling_low']:
+            supports.append(row['Low'])
+    
+    # 重複を除去し、近い価格をクラスタリング
+    def cluster_levels(levels, threshold=0.02):
+        if not levels:
+            return []
+        levels = sorted(set(levels))
+        clustered = [levels[0]]
+        for level in levels[1:]:
+            if abs(level - clustered[-1]) / clustered[-1] > threshold:
+                clustered.append(level)
+            else:
+                # 平均値で更新
+                clustered[-1] = (clustered[-1] + level) / 2
+        return clustered[-3:]  # 直近3つのレベルのみ返す
+    
+    current_price = df['Close'].iloc[-1]
+    
+    # 現在価格より下のサポート、上のレジスタンスをフィルタリング
+    supports = [s for s in cluster_levels(supports) if s < current_price]
+    resistances = [r for r in cluster_levels(resistances) if r > current_price]
+    
+    return {
+        'support': supports[-2:] if len(supports) > 2 else supports,  # 最大2本
+        'resistance': resistances[:2] if len(resistances) > 2 else resistances  # 最大2本
+    }
+
+
 def plot_candlestick_chart(ticker: str, name: str, period: str = "6mo", currency_symbol: str = "¥"):
     """
     ローソク足チャートを描画
@@ -254,7 +339,7 @@ def plot_candlestick_chart(ticker: str, name: str, period: str = "6mo", currency
         period: データ期間
         currency_symbol: 通貨記号（¥ または $）
     """
-    df = fetch_stock_data(ticker, period)
+    df, _, _ = fetch_stock_data(ticker, period)
     if df is None or df.empty:
         st.error(f"{name} ({ticker}) のデータを取得できませんでした")
         return
@@ -300,6 +385,33 @@ def plot_candlestick_chart(ticker: str, name: str, period: str = "6mo", currency
                 row=1, col=1
             )
     
+    # サポート・レジスタンスラインを計算・描画
+    sr_levels = calculate_support_resistance(df)
+    
+    # サポートライン（緑の点線）
+    for i, support in enumerate(sr_levels['support']):
+        fig.add_hline(
+            y=support,
+            line_dash="dot",
+            line_color="green",
+            line_width=2,
+            annotation_text=f"支持線 {i+1}: {currency_symbol}{support:.0f}",
+            annotation_position="bottom right",
+            row=1, col=1
+        )
+    
+    # レジスタンスライン（赤の点線）
+    for i, resistance in enumerate(sr_levels['resistance']):
+        fig.add_hline(
+            y=resistance,
+            line_dash="dot",
+            line_color="red",
+            line_width=2,
+            annotation_text=f"抵抗線 {i+1}: {currency_symbol}{resistance:.0f}",
+            annotation_position="top right",
+            row=1, col=1
+        )
+    
     # 出来高
     fig.add_trace(
         go.Bar(
@@ -325,6 +437,25 @@ def plot_candlestick_chart(ticker: str, name: str, period: str = "6mo", currency
     fig.update_yaxes(title_text="出来高", row=2, col=1)
     
     st.plotly_chart(fig, use_container_width=True)
+    
+    # サポート・レジスタンス情報を表示
+    if sr_levels['support'] or sr_levels['resistance']:
+        st.markdown("#### 📊 価格抵抗線情報")
+        col_s, col_r = st.columns(2)
+        with col_s:
+            st.markdown("**🟢 支持線（サポート）**")
+            if sr_levels['support']:
+                for i, s in enumerate(sr_levels['support'], 1):
+                    st.write(f"支持線 {i}: {currency_symbol}{s:,.0f}")
+            else:
+                st.write("検出なし")
+        with col_r:
+            st.markdown("**🔴 抵抗線（レジスタンス）**")
+            if sr_levels['resistance']:
+                for i, r in enumerate(sr_levels['resistance'], 1):
+                    st.write(f"抵抗線 {i}: {currency_symbol}{r:,.0f}")
+            else:
+                st.write("検出なし")
 
 
 def main():
@@ -428,6 +559,16 @@ def main():
                         "現在値",
                         format=f"{currency_symbol}%.2f"
                     ),
+                    "PER": st.column_config.NumberColumn(
+                        "PER",
+                        format="%.2f",
+                        help="株価収益率（Price Earnings Ratio）"
+                    ),
+                    "PBR": st.column_config.NumberColumn(
+                        "PBR",
+                        format="%.2f",
+                        help="株価純資産倍率（Price Book-value Ratio）"
+                    ),
                     "出来高": st.column_config.NumberColumn(
                         "出来高",
                         format="%d"
@@ -453,14 +594,20 @@ def main():
                 # 銘柄情報表示
                 stock_info = results_df[results_df['ティッカー']==selected_stock].iloc[0]
                 
-                col1, col2, col3, col4 = st.columns(4)
+                col1, col2, col3, col4, col5, col6 = st.columns(6)
                 with col1:
                     st.metric("現在値", f"{currency_symbol}{stock_info['現在値']}")
                 with col2:
-                    st.metric("RSI", stock_info['RSI'])
+                    per_display = stock_info['PER'] if stock_info['PER'] != "-" else "N/A"
+                    st.metric("PER", per_display)
                 with col3:
-                    st.metric("シグナル", stock_info['シグナル'])
+                    pbr_display = stock_info['PBR'] if stock_info['PBR'] != "-" else "N/A"
+                    st.metric("PBR", pbr_display)
                 with col4:
+                    st.metric("RSI", stock_info['RSI'])
+                with col5:
+                    st.metric("シグナル", stock_info['シグナル'])
+                with col6:
                     st.metric("出来高", f"{stock_info['出来高']:,}")
     else:
         # 初期表示
