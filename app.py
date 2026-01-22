@@ -527,9 +527,9 @@ def main():
         
         st.subheader("対象インデックス")
         if market == "日本株":
-            index_options = ["日経225", "TOPIX Core30", "TOPIX 100", "全銘柄"]
+            index_options = ["日経225", "TOPIX Core30", "TOPIX 100", "日本インデックスETF", "全銘柄"]
         else:
-            index_options = ["S&P 500"]
+            index_options = ["S&P 500", "米国インデックスETF"]
         
         selected_index = st.selectbox(
             "インデックスを選択",

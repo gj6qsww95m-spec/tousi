@@ -434,7 +434,8 @@ def get_stocks_by_index(index_name: str):
     インデックス名に応じた銘柄リストを取得
     
     Args:
-        index_name: インデックス名 ("日経225", "TOPIX Core30", "TOPIX 100", "全銘柄", "S&P 500")
+        index_name: インデックス名 ("日経225", "TOPIX Core30", "TOPIX 100", "全銘柄", "S&P 500",
+                    "日本インデックスETF", "米国インデックスETF")
     
     Returns:
         list: (ティッカーシンボル, 銘柄名) のタプルのリスト
@@ -456,6 +457,8 @@ def get_stocks_by_index(index_name: str):
                 seen.add(ticker)
                 unique_stocks.append((ticker, name))
         return unique_stocks
+    elif index_name == "日本インデックスETF":
+        return get_japan_index_etfs()
     elif index_name == "全銘柄":
         # 日経225 + TOPIX主要銘柄を統合
         nikkei = get_nikkei225_stocks()
@@ -471,6 +474,8 @@ def get_stocks_by_index(index_name: str):
         return unique_stocks
     elif index_name == "S&P 500":
         return get_sp500_stocks()
+    elif index_name == "米国インデックスETF":
+        return get_us_index_etfs()
     else:
         return get_nikkei225_stocks()
 
@@ -601,3 +606,112 @@ def get_sp500_stocks():
         ("AMT", "American Tower Corp."),
     ]
 
+
+def get_japan_index_etfs():
+    """
+    日本の主要インデックスETFを取得
+    
+    Returns:
+        list: (ティッカーシンボル, 銘柄名) のタプルのリスト
+    """
+    return [
+        # 日経225連動ETF
+        ("1321.T", "日経225連動型上場投資信託"),
+        ("1346.T", "MAXIS 日経225上場投信"),
+        ("1329.T", "iシェアーズ・コア 日経225 ETF"),
+        ("1330.T", "上場インデックスファンド225"),
+        ("1397.T", "SMDAM 日経225上場投信"),
+        
+        # TOPIX連動ETF
+        ("1306.T", "TOPIX連動型上場投資信託"),
+        ("1348.T", "MAXIS トピックス上場投信"),
+        ("1308.T", "上場インデックスファンドTOPIX"),
+        ("1473.T", "One ETF トピックス"),
+        ("1475.T", "iシェアーズ・コア TOPIX ETF"),
+        
+        # JPX日経インデックス400
+        ("1474.T", "One ETF JPX日経400"),
+        ("1364.T", "iシェアーズ JPX日経400 ETF"),
+        ("1592.T", "上場インデックスファンドJPX日経400"),
+        ("1593.T", "MAXIS JPX日経インデックス400上場投信"),
+        
+        # 日経高配当株50
+        ("1489.T", "NEXT FUNDS 日経平均高配当株50指数連動型上場投信"),
+        
+        # 東証REIT指数
+        ("1343.T", "NEXT FUNDS 東証REIT指数連動型上場投信"),
+        ("1345.T", "上場インデックスファンドJリート"),
+        ("1398.T", "SMDAM 東証REIT指数上場投信"),
+        
+        # マザーズ指数（グロース市場）
+        ("2516.T", "東証マザーズETF"),
+        
+        # 日経平均レバレッジ・インバース（参考）
+        ("1570.T", "NEXT FUNDS 日経平均レバレッジ・インデックス連動型上場投信"),
+        ("1357.T", "NEXT FUNDS 日経平均ダブルインバース・インデックス連動型上場投信"),
+    ]
+
+
+def get_us_index_etfs():
+    """
+    米国の主要インデックスETFを取得
+    
+    Returns:
+        list: (ティッカーシンボル, 銘柄名) のタプルのリスト
+    """
+    return [
+        # S&P 500連動ETF
+        ("SPY", "SPDR S&P 500 ETF Trust"),
+        ("VOO", "Vanguard S&P 500 ETF"),
+        ("IVV", "iShares Core S&P 500 ETF"),
+        ("SPLG", "SPDR Portfolio S&P 500 ETF"),
+        
+        # ダウ・ジョーンズ連動ETF
+        ("DIA", "SPDR Dow Jones Industrial Average ETF"),
+        
+        # NASDAQ-100連動ETF
+        ("QQQ", "Invesco QQQ Trust (NASDAQ-100)"),
+        ("QQQM", "Invesco NASDAQ 100 ETF"),
+        
+        # 米国全体市場
+        ("VTI", "Vanguard Total Stock Market ETF"),
+        ("ITOT", "iShares Core S&P Total U.S. Stock Market ETF"),
+        ("SPTM", "SPDR Portfolio S&P 1500 Composite Stock Market ETF"),
+        
+        # Russell 2000（小型株）
+        ("IWM", "iShares Russell 2000 ETF"),
+        ("VTWO", "Vanguard Russell 2000 ETF"),
+        
+        # Russell 1000（大型株）
+        ("IWB", "iShares Russell 1000 ETF"),
+        ("VONE", "Vanguard Russell 1000 ETF"),
+        
+        # セクターETF（参考）
+        ("XLK", "Technology Select Sector SPDR Fund"),
+        ("XLF", "Financial Select Sector SPDR Fund"),
+        ("XLE", "Energy Select Sector SPDR Fund"),
+        ("XLV", "Health Care Select Sector SPDR Fund"),
+        ("XLY", "Consumer Discretionary Select Sector SPDR Fund"),
+        ("XLP", "Consumer Staples Select Sector SPDR Fund"),
+        ("XLI", "Industrial Select Sector SPDR Fund"),
+        ("XLB", "Materials Select Sector SPDR Fund"),
+        ("XLU", "Utilities Select Sector SPDR Fund"),
+        ("XLRE", "Real Estate Select Sector SPDR Fund"),
+        
+        # 配当株ETF
+        ("VYM", "Vanguard High Dividend Yield ETF"),
+        ("SCHD", "Schwab U.S. Dividend Equity ETF"),
+        ("DVY", "iShares Select Dividend ETF"),
+        
+        # グロース・バリューETF
+        ("VUG", "Vanguard Growth ETF"),
+        ("VTV", "Vanguard Value ETF"),
+        ("IWF", "iShares Russell 1000 Growth ETF"),
+        ("IWD", "iShares Russell 1000 Value ETF"),
+        
+        # レバレッジ・インバース（参考）
+        ("TQQQ", "ProShares UltraPro QQQ (3x NASDAQ-100)"),
+        ("SQQQ", "ProShares UltraPro Short QQQ (-3x NASDAQ-100)"),
+        ("UPRO", "ProShares UltraPro S&P 500 (3x S&P 500)"),
+        ("SPXU", "ProShares UltraPro Short S&P 500 (-3x S&P 500)"),
+    ]
