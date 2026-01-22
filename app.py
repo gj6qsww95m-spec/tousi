@@ -20,9 +20,28 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# カスタムCSS（スマホ対応のレスポンシブデザイン）
+# カスタムCSS（スマホ対応のレスポンシブデザイン）+ PWA対応
 st.markdown("""
+    <!-- PWA / iOS ホーム画面対応 -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="株スクリーナー">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#4CAF50">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    
+    <!-- Apple Touch Icon (ホーム画面アイコン用) -->
+    <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%234CAF50' width='100' height='100' rx='20'/><text x='50' y='65' font-size='50' text-anchor='middle' fill='white'>📈</text></svg>">
+    
     <style>
+    /* PWA スタンドアローンモード用スタイル */
+    @media (display-mode: standalone) {
+        .stApp {
+            padding-top: env(safe-area-inset-top);
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+    }
+    
     .main {
         padding: 1rem;
     }
