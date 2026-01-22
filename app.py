@@ -21,7 +21,7 @@ def get_base64_image(image_path):
             return base64.b64encode(f.read()).decode()
     return None
 
-icon_path = os.path.join(os.path.dirname(__file__), "assets", "icon.png")
+icon_path = os.path.join(os.path.dirname(__file__), "assets", "icon_180.png")
 icon_base64 = get_base64_image(icon_path)
 page_icon = icon_path if os.path.exists(icon_path) else "📈"
 
