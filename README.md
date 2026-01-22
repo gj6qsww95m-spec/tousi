@@ -71,36 +71,67 @@ streamlit run app.py
 4. 条件に合致した銘柄が一覧表示されます
 5. 詳細を確認したい銘柄を選択してチャートを表示
 
-## Netlifyでのデプロイについて
+## Streamlit Community Cloudへのデプロイ
 
-⚠️ **重要**: NetlifyはPythonバックエンドをサポートしていないため、Streamlitアプリのデプロイには以下のいずれかのサービスを使用してください：
+### 必要なファイル
 
-### 推奨デプロイ方法
+このリポジトリには、Streamlit Community Cloudで動作するために必要なファイルがすべて含まれています：
 
-#### 1. Streamlit Community Cloud（推奨）
-- 無料で簡単にデプロイ可能
-- GitHubリポジトリと連携
-- https://streamlit.io/cloud
+- ✅ `app.py` - メインアプリケーション
+- ✅ `utils.py` - ユーティリティ関数
+- ✅ `requirements.txt` - Python依存関係
+- ✅ `.streamlit/config.toml` - Streamlit設定
 
-**手順**:
-1. GitHubにコードをプッシュ
-2. Streamlit Community Cloudにサインアップ
-3. リポジトリを選択してデプロイ
+### デプロイ手順
 
-#### 2. Heroku
+#### 1. GitHubリポジトリの準備
+
+```bash
+# Gitリポジトリの初期化（まだの場合）
+git init
+git add .
+git commit -m "Initial commit for Streamlit deployment"
+
+# GitHubにプッシュ
+git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git
+git branch -M main
+git push -u origin main
+```
+
+#### 2. Streamlit Community Cloudでのデプロイ
+
+1. **Streamlit Community Cloudにアクセス**
+   - https://share.streamlit.io/ にアクセス
+   - GitHubアカウントでサインイン
+
+2. **新しいアプリをデプロイ**
+   - 「New app」をクリック
+   - リポジトリを選択: `YOUR_USERNAME/YOUR_REPO_NAME`
+   - ブランチ: `main`
+   - メインファイルパス: `app.py`
+   - 「Deploy!」をクリック
+
+3. **デプロイ完了**
+   - 数分でアプリが起動します
+   - 公開URLが発行されます（例: `https://your-app-name.streamlit.app`）
+
+### その他のデプロイオプション
+
+#### Heroku
 - Pythonアプリのホスティングに対応
 - https://www.heroku.com/
 
 **手順**:
 1. `Procfile` を作成:
    ```
-   web: streamlit run app.py --server.port=$PORT
+   web: streamlit run app.py --server.port=$PORT --server.address=0.0.0.0
    ```
-2. Herokuにデプロイ
+2. Heroku CLIでデプロイ
 
-#### 3. Google Cloud Run
+#### Google Cloud Run
 - コンテナベースのデプロイ
 - スケーラブル
+- Dockerfileが必要
 
 ## スマホ対応
 
