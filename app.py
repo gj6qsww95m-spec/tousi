@@ -10,18 +10,31 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import time
+import base64
+import os
 import utils
+
+# アイコン画像（Base64）の取得
+def get_base64_image(image_path):
+    if os.path.exists(image_path):
+        with open(image_path, "rb") as f:
+            return base64.b64encode(f.read()).decode()
+    return None
+
+icon_path = os.path.join(os.path.dirname(__file__), "assets", "icon.png")
+icon_base64 = get_base64_image(icon_path)
+page_icon = icon_path if os.path.exists(icon_path) else "📈"
 
 # ページ設定
 st.set_page_config(
     page_title="株式スイングトレードスクリーナー",
-    page_icon="📈",
+    page_icon=page_icon,
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
 # カスタムCSS（スマホ対応のレスポンシブデザイン）+ PWA対応
-st.markdown("""
+st.markdown(f"""
     <!-- PWA / iOS ホーム画面対応 -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -31,34 +44,34 @@ st.markdown("""
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
     
     <!-- Apple Touch Icon (ホーム画面アイコン用) -->
-    <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%234CAF50' width='100' height='100' rx='20'/><text x='50' y='65' font-size='50' text-anchor='middle' fill='white'>📈</text></svg>">
+    {f'<link rel="apple-touch-icon" href="data:image/png;base64,{icon_base64}">' if icon_base64 else f"<link rel='apple-touch-icon' href='data:image/svg+xml,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\"><rect fill=\"%234CAF50\" width=\"100\" height=\"100\" rx=\"20\"/><text x=\"50\" y=\"65\" font-size=\"50\" text-anchor=\"middle\" fill=\"white\">📈</text></svg>'>"}
     
     <style>
     /* PWA スタンドアローンモード用スタイル */
-    @media (display-mode: standalone) {
-        .stApp {
+    @media (display-mode: standalone) {{
+        .stApp {{
             padding-top: env(safe-area-inset-top);
             padding-bottom: env(safe-area-inset-bottom);
-        }
-    }
+        }}
+    }}
     
-    .main {
+    .main {{
         padding: 1rem;
-    }
-    .stButton>button {
+    }}
+    .stButton>button {{
         width: 100%;
         background-color: #4CAF50;
         color: white;
         font-weight: bold;
-    }
-    .stDataFrame {
+    }}
+    .stDataFrame {{
         font-size: 0.9rem;
-    }
-    @media (max-width: 768px) {
-        .stDataFrame {
+    }}
+    @media (max-width: 768px) {{
+        .stDataFrame {{
             font-size: 0.7rem;
-        }
-    }
+        }}
+    }}
     </style>
 """, unsafe_allow_html=True)
 
