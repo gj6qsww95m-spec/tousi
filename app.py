@@ -1,5 +1,5 @@
 """
-日本株スイングトレード推奨銘柄スクリーニングアプリ
+株式スイングトレード推奨銘柄スクリーニングアプリ（日本株・米国株対応）
 """
 
 import streamlit as st
@@ -14,7 +14,7 @@ import utils
 
 # ページ設定
 st.set_page_config(
-    page_title="日本株スイングトレードスクリーナー",
+    page_title="株式スイングトレードスクリーナー",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -212,7 +212,7 @@ def screen_stocks(stock_list: list, progress_bar) -> pd.DataFrame:
     return pd.DataFrame(results)
 
 
-def plot_candlestick_chart(ticker: str, name: str, period: str = "6mo"):
+def plot_candlestick_chart(ticker: str, name: str, period: str = "6mo", currency_symbol: str = "¥"):
     """
     ローソク足チャートを描画
     
@@ -220,6 +220,7 @@ def plot_candlestick_chart(ticker: str, name: str, period: str = "6mo"):
         ticker: ティッカーシンボル
         name: 銘柄名
         period: データ期間
+        currency_symbol: 通貨記号（¥ または $）
     """
     df = fetch_stock_data(ticker, period)
     if df is None or df.empty:
@@ -288,7 +289,7 @@ def plot_candlestick_chart(ticker: str, name: str, period: str = "6mo"):
     )
     
     fig.update_xaxes(title_text="日付", row=2, col=1)
-    fig.update_yaxes(title_text="株価 (¥)", row=1, col=1)
+    fig.update_yaxes(title_text=f"株価 ({currency_symbol})", row=1, col=1)
     fig.update_yaxes(title_text="出来高", row=2, col=1)
     
     st.plotly_chart(fig, use_container_width=True)
@@ -298,17 +299,34 @@ def main():
     """
     メイン関数
     """
-    st.title("📈 日本株スイングトレードスクリーナー")
+    st.title("📈 株式スイングトレードスクリーナー")
     st.markdown("---")
     
     # サイドバー
     with st.sidebar:
         st.header("⚙️ 設定")
         
+        # 市場選択
+        st.subheader("🌏 市場選択")
+        market = st.radio(
+            "市場を選択",
+            options=["日本株", "米国株"],
+            index=0,
+            horizontal=True
+        )
+        
+        # 市場に応じた通貨記号
+        currency_symbol = "¥" if market == "日本株" else "$"
+        
         st.subheader("対象インデックス")
+        if market == "日本株":
+            index_options = ["日経225", "TOPIX Core30", "TOPIX 100", "全銘柄"]
+        else:
+            index_options = ["S&P 500"]
+        
         selected_index = st.selectbox(
             "インデックスを選択",
-            options=["日経225", "TOPIX Core30", "TOPIX 100", "全銘柄"],
+            options=index_options,
             index=0,
             help="スクリーニング対象のインデックスを選択してください"
         )
@@ -376,7 +394,7 @@ def main():
                 column_config={
                     "現在値": st.column_config.NumberColumn(
                         "現在値",
-                        format="¥%.2f"
+                        format=f"{currency_symbol}%.2f"
                     ),
                     "出来高": st.column_config.NumberColumn(
                         "出来高",
@@ -398,14 +416,14 @@ def main():
             
             if selected_stock:
                 stock_name = results_df[results_df['ティッカー']==selected_stock]['銘柄名'].iloc[0]
-                plot_candlestick_chart(selected_stock, stock_name, period)
+                plot_candlestick_chart(selected_stock, stock_name, period, currency_symbol)
                 
                 # 銘柄情報表示
                 stock_info = results_df[results_df['ティッカー']==selected_stock].iloc[0]
                 
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
-                    st.metric("現在値", f"¥{stock_info['現在値']}")
+                    st.metric("現在値", f"{currency_symbol}{stock_info['現在値']}")
                 with col2:
                     st.metric("RSI", stock_info['RSI'])
                 with col3:

@@ -370,7 +370,7 @@ def get_stocks_by_index(index_name: str):
     インデックス名に応じた銘柄リストを取得
     
     Args:
-        index_name: インデックス名 ("日経225", "TOPIX Core30", "TOPIX 100", "全銘柄")
+        index_name: インデックス名 ("日経225", "TOPIX Core30", "TOPIX 100", "全銘柄", "S&P 500")
     
     Returns:
         list: (ティッカーシンボル, 銘柄名) のタプルのリスト
@@ -405,6 +405,135 @@ def get_stocks_by_index(index_name: str):
                 seen.add(ticker)
                 unique_stocks.append((ticker, name))
         return unique_stocks
+    elif index_name == "S&P 500":
+        return get_sp500_stocks()
     else:
         return get_nikkei225_stocks()
+
+
+def get_sp500_stocks():
+    """
+    S&P 500の主要100銘柄を取得
+    
+    Returns:
+        list: (ティッカーシンボル, 銘柄名) のタプルのリスト
+    """
+    return [
+        # テクノロジー
+        ("AAPL", "Apple Inc."),
+        ("MSFT", "Microsoft Corporation"),
+        ("NVDA", "NVIDIA Corporation"),
+        ("GOOGL", "Alphabet Inc. (Class A)"),
+        ("GOOG", "Alphabet Inc. (Class C)"),
+        ("META", "Meta Platforms Inc."),
+        ("AMZN", "Amazon.com Inc."),
+        ("TSLA", "Tesla Inc."),
+        ("AVGO", "Broadcom Inc."),
+        ("ORCL", "Oracle Corporation"),
+        ("CRM", "Salesforce Inc."),
+        ("AMD", "Advanced Micro Devices Inc."),
+        ("ADBE", "Adobe Inc."),
+        ("CSCO", "Cisco Systems Inc."),
+        ("ACN", "Accenture plc"),
+        ("IBM", "IBM Corporation"),
+        ("INTC", "Intel Corporation"),
+        ("QCOM", "Qualcomm Inc."),
+        ("TXN", "Texas Instruments Inc."),
+        ("NOW", "ServiceNow Inc."),
+        
+        # 金融
+        ("JPM", "JPMorgan Chase & Co."),
+        ("V", "Visa Inc."),
+        ("MA", "Mastercard Inc."),
+        ("BAC", "Bank of America Corp."),
+        ("WFC", "Wells Fargo & Co."),
+        ("GS", "Goldman Sachs Group Inc."),
+        ("MS", "Morgan Stanley"),
+        ("AXP", "American Express Co."),
+        ("BLK", "BlackRock Inc."),
+        ("C", "Citigroup Inc."),
+        ("SCHW", "Charles Schwab Corp."),
+        ("BX", "Blackstone Inc."),
+        ("SPGI", "S&P Global Inc."),
+        ("CB", "Chubb Limited"),
+        ("MMC", "Marsh & McLennan Companies"),
+        
+        # ヘルスケア
+        ("UNH", "UnitedHealth Group Inc."),
+        ("JNJ", "Johnson & Johnson"),
+        ("LLY", "Eli Lilly and Company"),
+        ("PFE", "Pfizer Inc."),
+        ("MRK", "Merck & Co. Inc."),
+        ("ABBV", "AbbVie Inc."),
+        ("TMO", "Thermo Fisher Scientific Inc."),
+        ("ABT", "Abbott Laboratories"),
+        ("DHR", "Danaher Corporation"),
+        ("BMY", "Bristol-Myers Squibb Co."),
+        ("AMGN", "Amgen Inc."),
+        ("GILD", "Gilead Sciences Inc."),
+        ("CVS", "CVS Health Corporation"),
+        ("ISRG", "Intuitive Surgical Inc."),
+        ("MDT", "Medtronic plc"),
+        
+        # 消費財・小売
+        ("WMT", "Walmart Inc."),
+        ("PG", "Procter & Gamble Co."),
+        ("COST", "Costco Wholesale Corp."),
+        ("KO", "Coca-Cola Company"),
+        ("PEP", "PepsiCo Inc."),
+        ("HD", "Home Depot Inc."),
+        ("MCD", "McDonald's Corporation"),
+        ("NKE", "Nike Inc."),
+        ("SBUX", "Starbucks Corporation"),
+        ("TGT", "Target Corporation"),
+        ("LOW", "Lowe's Companies Inc."),
+        ("EL", "Estée Lauder Companies Inc."),
+        ("CL", "Colgate-Palmolive Co."),
+        ("GIS", "General Mills Inc."),
+        ("KHC", "Kraft Heinz Company"),
+        
+        # 通信
+        ("VZ", "Verizon Communications Inc."),
+        ("T", "AT&T Inc."),
+        ("CMCSA", "Comcast Corporation"),
+        ("TMUS", "T-Mobile US Inc."),
+        ("DIS", "Walt Disney Company"),
+        ("NFLX", "Netflix Inc."),
+        
+        # エネルギー
+        ("XOM", "Exxon Mobil Corporation"),
+        ("CVX", "Chevron Corporation"),
+        ("COP", "ConocoPhillips"),
+        ("SLB", "Schlumberger Limited"),
+        ("EOG", "EOG Resources Inc."),
+        ("MPC", "Marathon Petroleum Corp."),
+        ("PSX", "Phillips 66"),
+        ("VLO", "Valero Energy Corp."),
+        
+        # 工業
+        ("CAT", "Caterpillar Inc."),
+        ("BA", "Boeing Company"),
+        ("HON", "Honeywell International Inc."),
+        ("UPS", "United Parcel Service Inc."),
+        ("GE", "General Electric Company"),
+        ("RTX", "RTX Corporation"),
+        ("DE", "Deere & Company"),
+        ("LMT", "Lockheed Martin Corp."),
+        ("UNP", "Union Pacific Corporation"),
+        ("MMM", "3M Company"),
+        
+        # 素材
+        ("LIN", "Linde plc"),
+        ("APD", "Air Products and Chemicals Inc."),
+        ("SHW", "Sherwin-Williams Company"),
+        ("FCX", "Freeport-McMoRan Inc."),
+        ("NEM", "Newmont Corporation"),
+        
+        # 不動産・公益
+        ("NEE", "NextEra Energy Inc."),
+        ("DUK", "Duke Energy Corporation"),
+        ("SO", "Southern Company"),
+        ("D", "Dominion Energy Inc."),
+        ("AMT", "American Tower Corp."),
+    ]
 
