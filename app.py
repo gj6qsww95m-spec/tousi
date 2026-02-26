@@ -14,6 +14,7 @@ import base64
 import os
 from PIL import Image
 import utils
+from backtest import BacktestEngine
 
 # アイコン画像（Base64）の取得
 def get_base64_image(image_path):
@@ -236,13 +237,15 @@ def check_pullback(row: pd.Series) -> bool:
         return False
 
 
-def screen_stocks(stock_list: list, progress_bar) -> pd.DataFrame:
+def screen_stocks(stock_list: list, progress_bar, period: str = "6mo", calc_win_rate: bool = False) -> pd.DataFrame:
     """
     銘柄をスクリーニングする
     
     Args:
         stock_list: 銘柄リスト
         progress_bar: プログレスバー
+        period: データ取得期間
+        calc_win_rate: 勝率を計算するかどうか
     
     Returns:
         スクリーニング結果のDataFrame
@@ -250,12 +253,35 @@ def screen_stocks(stock_list: list, progress_bar) -> pd.DataFrame:
     results = []
     total = len(stock_list)
     
+    # バックテストエンジン初期化用（勝率計算用）
+    # 期間などはデフォルトまたは簡易設定を使用
+    bt_engine = None
+    if calc_win_rate:
+        # 過去1年間のパフォーマンスを見るため、終了日は今日
+        today = datetime.now()
+        start_date = today - timedelta(days=365*2) # 余裕を持って2年前から
+        bt_engine = BacktestEngine(
+            stock_list=[], # ダミー
+            start_date=start_date,
+            end_date=today,
+            holding_periods=[10], # 代表的な期間で計算
+            stop_loss=-0.05,
+            take_profit=0.10
+        )
+
     for idx, (ticker, name) in enumerate(stock_list):
         # プログレスバー更新
         progress_bar.progress((idx + 1) / total, text=f"分析中: {name} ({idx + 1}/{total})")
         
         # データ取得（PER・PBRも含む）
-        df, per, pbr = fetch_stock_data(ticker)
+        # 勝率計算時は期間を長めにとる必要がある場合があるが、
+        # 引数のperiodが短すぎる場合は勝率計算用に別途考慮が必要かも。
+        # ここではシンプルに引数のperiodを使用するが、勝率ONなら最低1yは欲しい。
+        fetch_period = period
+        if calc_win_rate and period in ["3mo", "6mo"]:
+            fetch_period = "1y" # 勝率計算時は最低1年分取得
+            
+        df, per, pbr = fetch_stock_data(ticker, period=fetch_period)
         if df is None or df.empty:
             continue
         
@@ -279,6 +305,21 @@ def screen_stocks(stock_list: list, progress_bar) -> pd.DataFrame:
             if is_pullback:
                 signal_type.append("押し目")
             
+            # 勝率計算
+            win_rate_str = "-"
+            if calc_win_rate and bt_engine:
+                try:
+                    signals = bt_engine.run_backtest_on_data(df, ticker, name)
+                    if signals:
+                        signals_df = pd.DataFrame(signals)
+                        stats = BacktestEngine.calculate_performance(signals_df)
+                        win_rate_str = f"{stats['win_rate']}% ({stats['win_count']}/{stats['total_signals']})"
+                    else:
+                        win_rate_str = "0% (0/0)"
+                except Exception as e:
+                    print(f"Error calculating win rate for {ticker}: {e}")
+                    win_rate_str = "Error"
+
             results.append({
                 "ティッカー": ticker,
                 "銘柄名": name,
@@ -290,6 +331,7 @@ def screen_stocks(stock_list: list, progress_bar) -> pd.DataFrame:
                 "SMA75": round(latest['SMA75'], 2) if pd.notna(latest['SMA75']) else "-",
                 "RSI": round(latest['RSI'], 2) if pd.notna(latest['RSI']) else "-",
                 "シグナル": " / ".join(signal_type),
+                "勝率(過去1年)": win_rate_str,
                 "出来高": int(latest['Volume']) if pd.notna(latest['Volume']) else 0,
             })
         
@@ -494,6 +536,14 @@ def main():
     メイン関数
     """
     st.title("📈 株式スイングトレードスクリーナー")
+    
+    # メインのタブ切替
+    main_tab = st.radio(
+        "モード選択",
+        options=["🔍 スクリーニング", "📊 バックテスト"],
+        horizontal=True,
+        label_visibility="collapsed"
+    )
     st.markdown("---")
     
     # サイドバー
@@ -541,34 +591,122 @@ def main():
         # 選択されたインデックスに応じて銘柄リストを取得
         STOCK_LIST = utils.get_stocks_by_index(selected_index)
         
-        st.subheader("スクリーニング条件")
-        st.info("""
-        **条件A（順張り）:**  
-        SMA5 > SMA25 > SMA75（パーフェクトオーダー）  
-        かつ RSI < 70
+        # スクリーニングモード用の設定
+        if main_tab == "🔍 スクリーニング":
+            st.subheader("スクリーニング条件")
+            st.info("""
+            **条件A（順張り）:**  
+            SMA5 > SMA25 > SMA75（パーフェクトオーダー）  
+            かつ RSI < 70
+            
+            **条件B（押し目）:**  
+            株価がSMA25付近（乖離率 ±2%以内）  
+            かつ 上昇トレンド中
+            """)
+            
+            st.subheader("データ期間")
+            period = st.selectbox(
+                "期間を選択",
+                options=["3mo", "6mo", "1y", "2y"],
+                index=1,
+                format_func=lambda x: {
+                    "3mo": "3ヶ月",
+                    "6mo": "6ヶ月",
+                    "1y": "1年",
+                    "2y": "2年"
+                }[x]
+            )
+            
+            st.subheader("便利機能")
+            show_win_rate = st.checkbox(
+                "過去の勝率を表示 (計算に時間がかかります)",
+                value=False,
+                key="show_win_rate",
+                help="過去1年のデータを用いて、同戦略での勝率を計算して表示します。"
+            )
+            
+            st.markdown("---")
+            
+            # スクリーニング実行ボタン
+            run_screening = st.button("🔍 スクリーニング実行", type="primary")
         
-        **条件B（押し目）:**  
-        株価がSMA25付近（乖離率 ±2%以内）  
-        かつ 上昇トレンド中
-        """)
-        
-        st.subheader("データ期間")
-        period = st.selectbox(
-            "期間を選択",
-            options=["3mo", "6mo", "1y", "2y"],
-            index=1,
-            format_func=lambda x: {
-                "3mo": "3ヶ月",
-                "6mo": "6ヶ月",
-                "1y": "1年",
-                "2y": "2年"
-            }[x]
-        )
-        
-        st.markdown("---")
-        
-        # スクリーニング実行ボタン
-        run_screening = st.button("🔍 スクリーニング実行", type="primary")
+        # バックテストモード用の設定
+        else:
+            show_win_rate = False
+            st.subheader("📅 バックテスト期間")
+            bt_period = st.selectbox(
+                "期間を選択",
+                options=["1y", "2y", "3y", "max"],
+                index=1,
+                format_func=lambda x: {
+                    "1y": "1年",
+                    "2y": "2年",
+                    "3y": "3年",
+                    "max": "全期間（最大）"
+                }[x],
+                key="bt_period"
+            )
+            
+            st.subheader("📦 保有期間")
+            holding_periods = st.multiselect(
+                "保有日数を選択",
+                options=[5, 10, 20, 40],
+                default=[5, 10, 20],
+                key="holding_periods"
+            )
+            
+            st.subheader("🎯 損切り/利確")
+            stop_loss = st.slider(
+                "損切りライン (%)",
+                min_value=-20,
+                max_value=-1,
+                value=-5,
+                key="stop_loss"
+            )
+            take_profit = st.slider(
+                "利確ライン (%)",
+                min_value=1,
+                max_value=30,
+                value=10,
+                key="take_profit"
+            )
+            
+            st.subheader("🚀 改善フィルター")
+            use_enhanced = st.checkbox(
+                "改善フィルターを使用",
+                value=False,
+                key="use_enhanced",
+                help="出来高、RSI範囲、MACD、ATRの追加条件を適用"
+            )
+            
+            if use_enhanced:
+                st.info("""
+                **改善版の追加条件:**
+                - RSI: 30-70（過熱感を回避）
+                - 出来高: 20日平均の1.5倍以上
+                - MACD: シグナル線より上
+                - ATR: 低ボラティリティ時のみ
+                - 押し目: 乖離率±1%に厳格化
+                """)
+            
+            pullback_div = st.slider(
+                "押し目の乖離率 (%)",
+                min_value=0.5,
+                max_value=3.0,
+                value=1.0 if use_enhanced else 2.0,
+                step=0.5,
+                key="pullback_div",
+                help="SMA25からの乖離率の上限"
+            )
+            
+            st.markdown("---")
+            
+            # バックテスト実行ボタン
+            run_backtest = st.button("📊 バックテスト実行", type="primary")
+            
+            # 変数の初期化（スクリーニングモード用）
+            period = "6mo"
+            run_screening = False
         
         st.markdown("---")
         st.caption(f"選択インデックス: {selected_index}")
@@ -582,45 +720,47 @@ def main():
         st.session_state.last_market = None
     if 'last_index' not in st.session_state:
         st.session_state.last_index = None
+    if 'backtest_results' not in st.session_state:
+        st.session_state.backtest_results = None
     
-    # メインコンテンツ
-    if run_screening:
-        st.subheader("🔍 スクリーニング結果")
-        
-        # プログレスバー
-        progress_bar = st.progress(0, text="スクリーニングを開始します...")
-        
-        # スクリーニング実行
-        results_df = screen_stocks(STOCK_LIST, progress_bar)
-        
-        # 結果をsession_stateに保存
-        st.session_state.results_df = results_df
-        st.session_state.last_market = market
-        st.session_state.last_index = selected_index
-        
-        # プログレスバークリア
-        progress_bar.empty()
-    
-    # session_stateに結果がある場合に表示（市場/インデックスが変更されていない場合のみ）
-    if st.session_state.results_df is not None:
-        # 市場またはインデックスが変更された場合はリセット
-        if st.session_state.last_market != market or st.session_state.last_index != selected_index:
-            st.session_state.results_df = None
-            st.info("👈 市場またはインデックスが変更されました。再度「スクリーニング実行」をクリックしてください。")
-        else:
-            results_df = st.session_state.results_df
+    # ==========================================
+    # スクリーニングモード
+    # ==========================================
+    if main_tab == "🔍 スクリーニング":
+        if run_screening:
+            st.subheader("🔍 スクリーニング結果")
             
-            if results_df.empty:
-                st.warning("条件に合致する銘柄が見つかりませんでした")
+            # プログレスバー
+            progress_bar = st.progress(0, text="スクリーニングを開始します...")
+            
+            # スクリーニング実行
+            results_df = screen_stocks(STOCK_LIST, progress_bar, period=period, calc_win_rate=show_win_rate)
+            
+            # 結果をsession_stateに保存
+            st.session_state.results_df = results_df
+            st.session_state.last_market = market
+            st.session_state.last_index = selected_index
+            
+            # プログレスバークリア
+            progress_bar.empty()
+        
+        # session_stateに結果がある場合に表示
+        if st.session_state.results_df is not None:
+            # 市場またはインデックスが変更された場合はリセット
+            if st.session_state.last_market != market or st.session_state.last_index != selected_index:
+                st.session_state.results_df = None
+                st.info("👈 市場またはインデックスが変更されました。再度「スクリーニング実行」をクリックしてください。")
             else:
-                st.subheader("🔍 スクリーニング結果")
-                st.success(f"✅ {len(results_df)}銘柄が条件に合致しました")
+                results_df = st.session_state.results_df
                 
-                # 結果表示
-                st.dataframe(
-                    results_df,
-                    use_container_width=True,
-                    hide_index=True,
+                if results_df.empty:
+                    st.warning("条件に合致する銘柄が見つかりませんでした")
+                else:
+                    st.subheader("🔍 スクリーニング結果")
+                    st.success(f"✅ {len(results_df)}銘柄が条件に合致しました")
+                    
+                    # 結果表示
+                    # カラム設定
                     column_config={
                         "現在値": st.column_config.NumberColumn(
                             "現在値",
@@ -641,67 +781,267 @@ def main():
                             format="%d"
                         )
                     }
-                )
+                    
+                    if "勝率(過去1年)" in results_df.columns:
+                         column_config["勝率(過去1年)"] = st.column_config.TextColumn(
+                            "勝率(過去1年)",
+                            help="過去1年間の同戦略（順張り/押し目）での勝率 (勝ち数/全シグナル数)"
+                        )
+
+                    st.dataframe(
+                        results_df,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config=column_config
+                    )
+                    
+                    # 銘柄詳細表示
+                    st.markdown("---")
+                    st.subheader("📊 銘柄詳細チャート")
+                    
+                    selected_stock = st.selectbox(
+                        "表示する銘柄を選択",
+                        options=results_df["ティッカー"].tolist(),
+                        format_func=lambda x: f"{results_df[results_df['ティッカー']==x]['銘柄名'].iloc[0]} ({x})",
+                        key="stock_selector"
+                    )
+                    
+                    if selected_stock:
+                        stock_name = results_df[results_df['ティッカー']==selected_stock]['銘柄名'].iloc[0]
+                        plot_candlestick_chart(selected_stock, stock_name, period, currency_symbol, st.session_state.theme)
+                        
+                        # 銘柄情報表示
+                        stock_info = results_df[results_df['ティッカー']==selected_stock].iloc[0]
+                        
+                        col1, col2, col3, col4, col5, col6 = st.columns(6)
+                        with col1:
+                            st.metric("現在値", f"{currency_symbol}{stock_info['現在値']}")
+                        with col2:
+                            per_display = stock_info['PER'] if stock_info['PER'] != "-" else "N/A"
+                            st.metric("PER", per_display)
+                        with col3:
+                            pbr_display = stock_info['PBR'] if stock_info['PBR'] != "-" else "N/A"
+                            st.metric("PBR", pbr_display)
+                        with col4:
+                            st.metric("RSI", stock_info['RSI'])
+                        with col5:
+                            st.metric("シグナル", stock_info['シグナル'])
+                        with col6:
+                            st.metric("出来高", f"{stock_info['出来高']:,}")
+        elif not run_screening:
+            # 初期表示
+            st.info("👈 サイドバーの「スクリーニング実行」ボタンをクリックして開始してください")
+            
+            st.subheader("📌 使い方")
+            st.markdown("""
+            1. **サイドバー**でデータ期間を選択
+            2. **スクリーニング実行**ボタンをクリック
+            3. 条件に合致した銘柄が一覧表示されます
+            4. 詳細を確認したい銘柄を選択してチャートを表示
+            
+            ### スクリーニング条件
+            - **パーフェクトオーダー**: 短期・中期・長期の移動平均線が理想的な配置
+            - **押し目**: 上昇トレンド中に一時的に価格が下がっている状態
+            
+            ### テクニカル指標
+            - **SMA**: 単純移動平均線（5日、25日、75日）
+            - **RSI**: 相対力指数（買われすぎ・売られすぎを判断）
+            - **MACD**: 移動平均収束拡散法（トレンドの強さを判断）
+            """)
+            
+            st.subheader("📋 対象銘柄一覧")
+            stock_df = pd.DataFrame(STOCK_LIST, columns=["ティッカー", "銘柄名"])
+            st.dataframe(stock_df, use_container_width=True, hide_index=True)
+    
+    # ==========================================
+    # バックテストモード
+    # ==========================================
+    else:
+        if run_backtest:
+            st.subheader("📊 バックテスト実行中...")
+            
+            # 期間設定
+            end_date = datetime.now()
+            if bt_period == "1y":
+                start_date = end_date - timedelta(days=365)
+            elif bt_period == "2y":
+                start_date = end_date - timedelta(days=730)
+            elif bt_period == "3y":
+                start_date = end_date - timedelta(days=1095)
+            else:  # max
+                start_date = end_date - timedelta(days=3650)  # 約10年
+            
+            # プログレスバー
+            progress_bar = st.progress(0, text="バックテストを開始します...")
+            status_text = st.empty()
+            
+            def progress_callback(current, total, name):
+                progress_bar.progress(current / total, text=f"分析中: {name} ({current}/{total})")
+            
+            # バックテストエンジン初期化・実行
+            engine = BacktestEngine(
+                stock_list=STOCK_LIST,
+                start_date=start_date,
+                end_date=end_date,
+                holding_periods=holding_periods if holding_periods else [5, 10, 20],
+                stop_loss=stop_loss / 100,
+                take_profit=take_profit / 100,
+                use_enhanced_filters=use_enhanced,
+                pullback_divergence=pullback_div
+            )
+            
+            signals_df = engine.run_backtest(progress_callback=progress_callback)
+            
+            # 結果を保存
+            st.session_state.backtest_results = {
+                'signals_df': signals_df,
+                'start_date': start_date,
+                'end_date': end_date,
+                'market': market,
+                'index': selected_index,
+                'holding_periods': holding_periods,
+                'stop_loss': stop_loss,
+                'take_profit': take_profit,
+                'use_enhanced': use_enhanced,
+                'pullback_div': pullback_div
+            }
+            
+            # プログレスバークリア
+            progress_bar.empty()
+            status_text.empty()
+        
+        # バックテスト結果表示
+        if st.session_state.backtest_results is not None:
+            bt_data = st.session_state.backtest_results
+            signals_df = bt_data['signals_df']
+            
+            if signals_df.empty:
+                st.warning("シグナルが検出されませんでした。期間や条件を変更してお試しください。")
+            else:
+                # サマリー統計
+                st.subheader("📈 バックテスト結果サマリー")
                 
-                # 銘柄詳細表示
+                stats = BacktestEngine.calculate_performance(signals_df)
+                
+                # メトリクス表示
+                col1, col2, col3, col4, col5 = st.columns(5)
+                with col1:
+                    st.metric("総シグナル数", f"{stats['total_signals']}件")
+                with col2:
+                    st.metric("勝率", f"{stats['win_rate']}%")
+                with col3:
+                    st.metric("平均リターン", f"{stats['avg_return']}%")
+                with col4:
+                    st.metric("最大利益", f"+{stats['max_profit']}%")
+                with col5:
+                    st.metric("最大損失", f"{stats['max_loss']}%")
+                
+                col6, col7, col8, col9, col10 = st.columns(5)
+                with col6:
+                    st.metric("勝ちトレード", stats['win_count'])
+                with col7:
+                    st.metric("負けトレード", stats['loss_count'])
+                with col8:
+                    st.metric("平均勝ち", f"+{stats['avg_win']}%")
+                with col9:
+                    st.metric("平均負け", f"-{stats['avg_loss']}%")
+                with col10:
+                    st.metric("プロフィットファクター", stats['profit_factor'])
+                
                 st.markdown("---")
-                st.subheader("📊 銘柄詳細チャート")
                 
-                # 銘柄選択（keyを追加してユニークにする）
-                selected_stock = st.selectbox(
-                    "表示する銘柄を選択",
-                    options=results_df["ティッカー"].tolist(),
-                    format_func=lambda x: f"{results_df[results_df['ティッカー']==x]['銘柄名'].iloc[0]} ({x})",
-                    key="stock_selector"
+                # 保有期間別統計
+                st.subheader("📊 保有期間別パフォーマンス")
+                period_stats = BacktestEngine.calculate_performance_by_period(signals_df)
+                if not period_stats.empty:
+                    display_cols = ['保有期間', 'total_signals', 'win_rate', 'avg_return', 'max_profit', 'max_loss', 'profit_factor']
+                    display_df = period_stats[display_cols].copy()
+                    display_df.columns = ['保有期間（日）', 'シグナル数', '勝率(%)', '平均リターン(%)', '最大利益(%)', '最大損失(%)', 'PF']
+                    st.dataframe(display_df, use_container_width=True, hide_index=True)
+                
+                st.markdown("---")
+                
+                # シグナルタイプ別統計
+                st.subheader("📋 シグナルタイプ別パフォーマンス")
+                type_stats = BacktestEngine.calculate_performance_by_signal_type(signals_df)
+                if not type_stats.empty:
+                    display_cols = ['シグナルタイプ', 'total_signals', 'win_rate', 'avg_return', 'profit_factor']
+                    display_df = type_stats[display_cols].copy()
+                    display_df.columns = ['シグナルタイプ', 'シグナル数', '勝率(%)', '平均リターン(%)', 'PF']
+                    st.dataframe(display_df, use_container_width=True, hide_index=True)
+                
+                st.markdown("---")
+                
+                # 全シグナル一覧
+                st.subheader("📝 シグナル一覧")
+                
+                # フィルター
+                filter_cols = st.columns(3)
+                with filter_cols[0]:
+                    filter_period = st.selectbox(
+                        "保有期間でフィルター",
+                        options=["全て"] + sorted(signals_df['設定保有期間'].unique().tolist()),
+                        key="filter_period"
+                    )
+                with filter_cols[1]:
+                    filter_result = st.selectbox(
+                        "結果でフィルター",
+                        options=["全て", "勝ち", "負け"],
+                        key="filter_result"
+                    )
+                with filter_cols[2]:
+                    filter_signal = st.selectbox(
+                        "シグナルでフィルター",
+                        options=["全て"] + sorted(signals_df['シグナルタイプ'].unique().tolist()),
+                        key="filter_signal"
+                    )
+                
+                # フィルター適用
+                filtered_df = signals_df.copy()
+                if filter_period != "全て":
+                    filtered_df = filtered_df[filtered_df['設定保有期間'] == filter_period]
+                if filter_result != "全て":
+                    filtered_df = filtered_df[filtered_df['勝敗'] == filter_result]
+                if filter_signal != "全て":
+                    filtered_df = filtered_df[filtered_df['シグナルタイプ'] == filter_signal]
+                
+                st.dataframe(
+                    filtered_df,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "シグナル日": st.column_config.DateColumn("シグナル日", format="YYYY-MM-DD"),
+                        "エントリー価格": st.column_config.NumberColumn("エントリー", format=f"{currency_symbol}%.2f"),
+                        "イグジット価格": st.column_config.NumberColumn("イグジット", format=f"{currency_symbol}%.2f"),
+                        "リターン": st.column_config.NumberColumn("リターン(%)", format="%.2f%%"),
+                    }
                 )
                 
-                if selected_stock:
-                    stock_name = results_df[results_df['ティッカー']==selected_stock]['銘柄名'].iloc[0]
-                    plot_candlestick_chart(selected_stock, stock_name, period, currency_symbol, st.session_state.theme)
-                    
-                    # 銘柄情報表示
-                    stock_info = results_df[results_df['ティッカー']==selected_stock].iloc[0]
-                    
-                    col1, col2, col3, col4, col5, col6 = st.columns(6)
-                    with col1:
-                        st.metric("現在値", f"{currency_symbol}{stock_info['現在値']}")
-                    with col2:
-                        per_display = stock_info['PER'] if stock_info['PER'] != "-" else "N/A"
-                        st.metric("PER", per_display)
-                    with col3:
-                        pbr_display = stock_info['PBR'] if stock_info['PBR'] != "-" else "N/A"
-                        st.metric("PBR", pbr_display)
-                    with col4:
-                        st.metric("RSI", stock_info['RSI'])
-                    with col5:
-                        st.metric("シグナル", stock_info['シグナル'])
-                    with col6:
-                        st.metric("出来高", f"{stock_info['出来高']:,}")
-    elif not run_screening:
-        # 初期表示
-        st.info("👈 サイドバーの「スクリーニング実行」ボタンをクリックして開始してください")
+                st.caption(f"表示: {len(filtered_df)} / {len(signals_df)} 件")
         
-        st.subheader("📌 使い方")
-        st.markdown("""
-        1. **サイドバー**でデータ期間を選択
-        2. **スクリーニング実行**ボタンをクリック
-        3. 条件に合致した銘柄が一覧表示されます
-        4. 詳細を確認したい銘柄を選択してチャートを表示
-        
-        ### スクリーニング条件
-        - **パーフェクトオーダー**: 短期・中期・長期の移動平均線が理想的な配置
-        - **押し目**: 上昇トレンド中に一時的に価格が下がっている状態
-        
-        ### テクニカル指標
-        - **SMA**: 単純移動平均線（5日、25日、75日）
-        - **RSI**: 相対力指数（買われすぎ・売られすぎを判断）
-        - **MACD**: 移動平均収束拡散法（トレンドの強さを判断）
-        """)
-        
-        st.subheader("📋 対象銘柄一覧")
-        stock_df = pd.DataFrame(STOCK_LIST, columns=["ティッカー", "銘柄名"])
-        st.dataframe(stock_df, use_container_width=True, hide_index=True)
+        else:
+            # 初期表示
+            st.info("👈 サイドバーでバックテスト設定を行い、「バックテスト実行」ボタンをクリックしてください")
+            
+            st.subheader("📌 バックテストについて")
+            st.markdown("""
+            バックテストでは、過去のデータでスクリーニング条件を満たしたシグナルの
+            パフォーマンスを検証します。
+            
+            ### 設定項目
+            - **バックテスト期間**: 検証する過去の期間
+            - **保有期間**: シグナル発生後の保有日数
+            - **損切り/利確**: 早期決済の閾値
+            
+            ### 評価指標
+            - **勝率**: 利益が出たトレードの割合
+            - **平均リターン**: 全トレードの平均収益率
+            - **プロフィットファクター**: 総利益 ÷ 総損失
+            
+            ⚠️ **注意**: 過去のパフォーマンスは将来の結果を保証するものではありません。
+            """)
 
 
 if __name__ == "__main__":
     main()
+
