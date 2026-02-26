@@ -15,6 +15,7 @@ import os
 from PIL import Image
 import utils
 from backtest import BacktestEngine
+from gemini_analyzer import analyze_stocks
 
 # アイコン画像（Base64）の取得
 def get_base64_image(image_path):
@@ -591,6 +592,15 @@ def main():
         # 選択されたインデックスに応じて銘柄リストを取得
         STOCK_LIST = utils.get_stocks_by_index(selected_index)
         
+        # Gemini APIキー設定
+        st.subheader("🤖 Gemini AI分析")
+        gemini_api_key = st.text_input(
+            "Gemini APIキー",
+            type="password",
+            value=os.environ.get("GEMINI_API_KEY", ""),
+            help="Google AI StudioからAPIキーを取得してください。設定するとAIが上位10銘柄を選定します。"
+        )
+        
         # スクリーニングモード用の設定
         if main_tab == "🔍 スクリーニング":
             st.subheader("スクリーニング条件")
@@ -722,6 +732,8 @@ def main():
         st.session_state.last_index = None
     if 'backtest_results' not in st.session_state:
         st.session_state.backtest_results = None
+    if 'ai_comment' not in st.session_state:
+        st.session_state.ai_comment = ""
     
     # ==========================================
     # スクリーニングモード
@@ -736,10 +748,95 @@ def main():
             # スクリーニング実行
             results_df = screen_stocks(STOCK_LIST, progress_bar, period=period, calc_win_rate=show_win_rate)
             
+            # ==== バックテスト自動実行 ====
+            if not results_df.empty:
+                progress_bar.progress(0, text="バックテストを実行中...")
+                today = datetime.now()
+                bt_start = today - timedelta(days=365)
+                bt_engine = BacktestEngine(
+                    stock_list=[],
+                    start_date=bt_start,
+                    end_date=today,
+                    holding_periods=[10],
+                    stop_loss=-0.05,
+                    take_profit=0.10
+                )
+                
+                bt_results = []
+                total_bt = len(results_df)
+                for i, (idx, row) in enumerate(results_df.iterrows()):
+                    ticker = row["ティッカー"]
+                    name = row["銘柄名"]
+                    progress_bar.progress(
+                        (i + 1) / total_bt,
+                        text=f"バックテスト中: {name} ({i + 1}/{total_bt})"
+                    )
+                    try:
+                        df_bt = bt_engine._fetch_stock_data(ticker)
+                        if df_bt is not None and not df_bt.empty:
+                            signals = bt_engine.run_backtest_on_data(df_bt, ticker, name)
+                            if signals:
+                                signals_df_bt = pd.DataFrame(signals)
+                                stats = BacktestEngine.calculate_performance(signals_df_bt)
+                                bt_results.append({
+                                    "ティッカー": ticker,
+                                    "勝率(%)": stats["win_rate"],
+                                    "平均リターン(%)": stats["avg_return"],
+                                    "PF": stats["profit_factor"],
+                                    "シグナル数": stats["total_signals"],
+                                    "最大利益(%)": stats["max_profit"],
+                                    "最大損失(%)": stats["max_loss"],
+                                })
+                            else:
+                                bt_results.append({
+                                    "ティッカー": ticker,
+                                    "勝率(%)": 0, "平均リターン(%)": 0,
+                                    "PF": 0, "シグナル数": 0,
+                                    "最大利益(%)": 0, "最大損失(%)": 0,
+                                })
+                        else:
+                            bt_results.append({
+                                "ティッカー": ticker,
+                                "勝率(%)": "-", "平均リターン(%)": "-",
+                                "PF": "-", "シグナル数": "-",
+                                "最大利益(%)": "-", "最大損失(%)": "-",
+                            })
+                    except Exception as e:
+                        print(f"Backtest error for {ticker}: {e}")
+                        bt_results.append({
+                            "ティッカー": ticker,
+                            "勝率(%)": "-", "平均リターン(%)": "-",
+                            "PF": "-", "シグナル数": "-",
+                            "最大利益(%)": "-", "最大損失(%)": "-",
+                        })
+                    time.sleep(0.05)
+                
+                # バックテスト結果をメインの結果DFに結合
+                if bt_results:
+                    bt_df = pd.DataFrame(bt_results)
+                    results_df = results_df.merge(bt_df, on="ティッカー", how="left")
+            
+            # ==== Gemini AI分析 ====
+            ai_comment = ""
+            if not results_df.empty and gemini_api_key:
+                progress_bar.progress(0, text="🤖 Gemini AIが分析中...")
+                try:
+                    results_df, ai_comment = analyze_stocks(
+                        results_df, gemini_api_key, market=market, top_n=10
+                    )
+                except Exception as e:
+                    st.warning(f"Gemini AI分析でエラーが発生しました: {str(e)}")
+                    ai_comment = f"AI分析エラー: {str(e)}"
+                    results_df = results_df.head(10)
+            elif not results_df.empty:
+                # APIキー未設定時は上位10件に制限（出来高順）
+                results_df = results_df.head(10)
+            
             # 結果をsession_stateに保存
             st.session_state.results_df = results_df
             st.session_state.last_market = market
             st.session_state.last_index = selected_index
+            st.session_state.ai_comment = ai_comment
             
             # プログレスバークリア
             progress_bar.empty()
@@ -756,8 +853,17 @@ def main():
                 if results_df.empty:
                     st.warning("条件に合致する銘柄が見つかりませんでした")
                 else:
-                    st.subheader("🔍 スクリーニング結果")
-                    st.success(f"✅ {len(results_df)}銘柄が条件に合致しました")
+                    # AI分析コメントがあれば表示
+                    ai_comment = st.session_state.get('ai_comment', '')
+                    if ai_comment:
+                        st.info(f"🤖 **Gemini AI分析**: {ai_comment}")
+                    
+                    if "AI推奨順位" in results_df.columns:
+                        st.subheader("🏆 AI推奨 上位10銘柄")
+                        st.success(f"✅ Gemini AIが{len(results_df)}銘柄を選定しました（バックテスト結果に基づく分析）")
+                    else:
+                        st.subheader("🔍 スクリーニング結果（上位10件）")
+                        st.success(f"✅ {len(results_df)}銘柄を表示中")
                     
                     # 結果表示
                     # カラム設定
@@ -786,6 +892,19 @@ def main():
                          column_config["勝率(過去1年)"] = st.column_config.TextColumn(
                             "勝率(過去1年)",
                             help="過去1年間の同戦略（順張り/押し目）での勝率 (勝ち数/全シグナル数)"
+                        )
+                    
+                    if "AI分析コメント" in results_df.columns:
+                        column_config["AI分析コメント"] = st.column_config.TextColumn(
+                            "AI分析コメント",
+                            help="Gemini AIによる推奨理由",
+                            width="large"
+                        )
+                    
+                    if "AI推奨順位" in results_df.columns:
+                        column_config["AI推奨順位"] = st.column_config.NumberColumn(
+                            "AI推奨順位",
+                            format="%d"
                         )
 
                     st.dataframe(
@@ -828,6 +947,12 @@ def main():
                             st.metric("シグナル", stock_info['シグナル'])
                         with col6:
                             st.metric("出来高", f"{stock_info['出来高']:,}")
+                        
+                        # AI分析コメント表示
+                        if "AI分析コメント" in results_df.columns:
+                            ai_comment_stock = stock_info.get('AI分析コメント', '')
+                            if ai_comment_stock:
+                                st.info(f"🤖 **AI分析**: {ai_comment_stock}")
         elif not run_screening:
             # 初期表示
             st.info("👈 サイドバーの「スクリーニング実行」ボタンをクリックして開始してください")
