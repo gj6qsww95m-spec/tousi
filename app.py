@@ -709,6 +709,27 @@ def main():
                 help="SMA25からの乖離率の上限"
             )
             
+            st.subheader("📍 トレールストップ")
+            use_trailing_stop = st.checkbox(
+                "トレールストップを使用",
+                value=False,
+                key="use_trailing_stop",
+                help="株価上昇に合わせてストップラインを自動で引き上げます"
+            )
+            
+            trailing_stop_pct = 3.0
+            if use_trailing_stop:
+                trailing_stop_pct = st.slider(
+                    "トレール幅 (%)",
+                    min_value=1.0,
+                    max_value=10.0,
+                    value=3.0,
+                    step=0.5,
+                    key="trailing_stop_pct",
+                    help="最高値からの下落率でトレールストップを発動"
+                )
+                st.info("最高値から指定割合下落したら自動決済します")
+            
             st.markdown("---")
             
             # バックテスト実行ボタン
@@ -1012,7 +1033,9 @@ def main():
                 stop_loss=stop_loss / 100,
                 take_profit=take_profit / 100,
                 use_enhanced_filters=use_enhanced,
-                pullback_divergence=pullback_div
+                pullback_divergence=pullback_div,
+                use_trailing_stop=use_trailing_stop,
+                trailing_stop_pct=trailing_stop_pct / 100
             )
             
             signals_df = engine.run_backtest(progress_callback=progress_callback)
@@ -1028,7 +1051,9 @@ def main():
                 'stop_loss': stop_loss,
                 'take_profit': take_profit,
                 'use_enhanced': use_enhanced,
-                'pullback_div': pullback_div
+                'pullback_div': pullback_div,
+                'use_trailing_stop': use_trailing_stop,
+                'trailing_stop_pct': trailing_stop_pct
             }
             
             # プログレスバークリア
@@ -1157,6 +1182,7 @@ def main():
             - **バックテスト期間**: 検証する過去の期間
             - **保有期間**: シグナル発生後の保有日数
             - **損切り/利確**: 早期決済の閾値
+            - **トレールストップ**: 最高値からの下落率で自動決済（利益を確保しながらトレンドに追従）
             
             ### 評価指標
             - **勝率**: 利益が出たトレードの割合

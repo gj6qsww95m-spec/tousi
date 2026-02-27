@@ -28,7 +28,9 @@ class BacktestEngine:
         stop_loss: float = -0.05,
         take_profit: float = 0.10,
         use_enhanced_filters: bool = False,
-        pullback_divergence: float = 2.0
+        pullback_divergence: float = 2.0,
+        use_trailing_stop: bool = False,
+        trailing_stop_pct: float = 0.03
     ):
         """
         バックテストエンジンの初期化
@@ -42,6 +44,8 @@ class BacktestEngine:
             take_profit: 利確ライン（例: 0.10 = +10%）
             use_enhanced_filters: 改善フィルターを使用するか
             pullback_divergence: 押し目の乖離率閾値（デフォルト2.0%）
+            use_trailing_stop: トレールストップを使用するか
+            trailing_stop_pct: トレールストップの割合（例: 0.03 = 3%）
         """
         self.stock_list = stock_list
         self.start_date = start_date
@@ -51,6 +55,8 @@ class BacktestEngine:
         self.take_profit = take_profit
         self.use_enhanced_filters = use_enhanced_filters
         self.pullback_divergence = pullback_divergence
+        self.use_trailing_stop = use_trailing_stop
+        self.trailing_stop_pct = trailing_stop_pct
     
     def _fetch_stock_data(self, ticker: str) -> Optional[pd.DataFrame]:
         """
@@ -234,13 +240,18 @@ class BacktestEngine:
             entry_price = df.iloc[entry_idx]['Close']
             exit_idx = min(entry_idx + holding_period, len(df) - 1)
             
-            # 損切り/利確チェック
+            # 損切り/利確/トレールストップチェック
             actual_exit_idx = exit_idx
             exit_reason = "期間満了"
+            highest_price = entry_price  # トレールストップ用：最高値追跡
             
             for i in range(entry_idx + 1, exit_idx + 1):
                 if i >= len(df):
                     break
+                
+                # 日中高値で最高値を更新
+                high_price = df.iloc[i]['High']
+                highest_price = max(highest_price, high_price)
                 
                 current_return = (df.iloc[i]['Close'] - entry_price) / entry_price
                 
@@ -255,6 +266,14 @@ class BacktestEngine:
                     actual_exit_idx = i
                     exit_reason = "利確"
                     break
+                
+                # トレールストップ
+                if self.use_trailing_stop:
+                    trail_stop_price = highest_price * (1 - self.trailing_stop_pct)
+                    if df.iloc[i]['Close'] <= trail_stop_price:
+                        actual_exit_idx = i
+                        exit_reason = "トレールストップ"
+                        break
             
             exit_price = df.iloc[actual_exit_idx]['Close']
             trade_return = (exit_price - entry_price) / entry_price
